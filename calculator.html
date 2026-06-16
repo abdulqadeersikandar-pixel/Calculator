@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculate ME - History Edition</title>
+    <style>
+        :root {
+            --bg-color: #f0f2f5; --text-color: #333; --calc-bg: #ffffff;
+            --btn-bg: #e1e1e1; --btn-hover: #d1d1d1; --accent: #007bff;
+            --shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        [data-theme="dark"] {
+            --bg-color: #121212; --text-color: #e0e0e0; --calc-bg: #1e1e1e;
+            --btn-bg: #333; --btn-hover: #444; --accent: #bb86fc;
+            --shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+
+        body { transition: background 0.3s; background-color: var(--bg-color); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Segoe UI', sans-serif; margin: 0; }
+        .header-container { display: flex; gap: 10px; width: 340px; margin-bottom: 10px; justify-content: center; }
+        .calculator { background: var(--calc-bg); padding: 1.5rem; border-radius: 20px; box-shadow: var(--shadow); width: 340px; position: relative; }
+        
+        .display { width: 100%; padding: 1rem; margin-bottom: 1rem; border: none; border-radius: 10px; background: var(--btn-bg); color: var(--text-color); font-size: 1.5rem; text-align: right; box-sizing: border-box; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
+        .animate-result { animation: pulse 0.3s ease-out; }
+
+        .scientific-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-height: 0; overflow: hidden; opacity: 0; transition: all 0.4s ease-in-out; }
+        .scientific-grid.active { max-height: 150px; opacity: 1; margin-bottom: 10px; }
+
+        .keypad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+        .btn { padding: 12px; border: none; border-radius: 8px; background: var(--btn-bg); color: var(--text-color); cursor: pointer; transition: transform 0.1s, background 0.2s; }
+        .btn:hover { background: var(--btn-hover); }
+        .btn:active { transform: scale(0.95); }
+        .btn.op { color: var(--accent); }
+        .btn-toggle { padding: 8px 12px; border-radius: 15px; border: 1px solid var(--text-color); background: transparent; color: var(--text-color); cursor: pointer; font-size: 0.8rem; }
+
+        /* History Styles */
+        .history-panel { display: none; margin-top: 15px; border-top: 1px solid var(--btn-bg); padding-top: 10px; max-height: 200px; overflow-y: auto; }
+        .history-panel.active { display: block; }
+        .history-item { font-size: 0.9rem; padding: 5px 0; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <button class="btn-toggle" id="sciToggle">Scientific</button>
+        <button class="btn-toggle" id="historyToggle">History</button>
+        <button class="btn-toggle" id="themeBtn">Dark/Light</button>
+    </div>
+
+    <div class="calculator">
+        <input type="text" class="display" id="screen" disabled placeholder="0">
+        
+        <div class="scientific-grid" id="sciPanel">
+            <button class="btn" data-val="Math.sin(">sin</button>
+            <button class="btn" data-val="Math.cos(">cos</button>
+            <button class="btn" data-val="Math.tan(">tan</button>
+            <button class="btn" data-val="Math.sqrt(">√</button>
+            <button class="btn" data-val="Math.log(">log</button>
+            <button class="btn" data-val="Math.log10(">ln</button>
+            <button class="btn" data-val="**">^</button>
+            <button class="btn" data-val="Math.PI">π</button>
+        </div>
+
+        <div class="keypad" id="keypad">
+            <button class="btn op">*</button> <button class="btn op">/</button> <button class="btn op">+</button> <button class="btn op">-</button>
+            <button class="btn">7</button> <button class="btn">8</button> <button class="btn">9</button> <button class="btn op">C</button>
+            <button class="btn">4</button> <button class="btn">5</button> <button class="btn">6</button> <button class="btn" data-val="2.718">e</button>
+            <button class="btn">1</button> <button class="btn">2</button> <button class="btn">3</button> <button class="btn">000</button>
+            <button class="btn">0</button> <button class="btn">.</button> <button class="btn">00</button> <button class="btn op">=</button>
+        </div>
+
+        <div class="history-panel" id="historyPanel">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong>History</strong>
+                <button class="btn-toggle" onclick="clearHistory()">Clear</button>
+            </div>
+            <div id="historyList"></div>
+        </div>
+    </div>
+
+    <script>
+        const screen = document.getElementById('screen');
+        const keypad = document.getElementById('keypad');
+        const sciPanel = document.getElementById('sciPanel');
+        const sciToggle = document.getElementById('sciToggle');
+        const historyToggle = document.getElementById('historyToggle');
+        const historyPanel = document.getElementById('historyPanel');
+        const historyList = document.getElementById('historyList');
+        const themeBtn = document.getElementById('themeBtn');
+        let currentString = "";
+
+        // UI Toggles
+        sciToggle.addEventListener('click', () => sciPanel.classList.toggle('active'));
+        historyToggle.addEventListener('click', () => {
+            historyPanel.classList.toggle('active');
+            renderHistory();
+        });
+
+        // History Logic
+        function saveToHistory(calc) {
+            let history = JSON.parse(localStorage.getItem('calcHistory') || '[]');
+            history.unshift(calc); // Add to start
+            if (history.length > 10) history.pop(); // Keep only last 10
+            localStorage.setItem('calcHistory', JSON.stringify(history));
+        }
+
+        function renderHistory() {
+            historyList.innerHTML = "";
+            let history = JSON.parse(localStorage.getItem('calcHistory') || '[]');
+            history.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'history-item';
+                div.innerText = item;
+                historyList.appendChild(div);
+            });
+        }
+
+        function clearHistory() {
+            localStorage.removeItem('calcHistory');
+            renderHistory();
+        }
+
+        // Calculator Logic
+        document.querySelector('.calculator').addEventListener('click', (e) => {
+            if (!e.target.classList.contains('btn')) return;
+            const val = e.target.getAttribute('data-val') || e.target.innerText;
+
+            if (val === "=") {
+                try {
+                    let result = eval(currentString);
+                    saveToHistory(`${currentString} = ${result}`);
+                    currentString = result.toString();
+                    screen.classList.add('animate-result');
+                    setTimeout(() => screen.classList.remove('animate-result'), 300);
+                } catch { currentString = "Error"; }
+            } else if (val === "C") {
+                currentString = "";
+            } else {
+                currentString += val;
+            }
+            screen.value = currentString;
+        });
+
+        themeBtn.addEventListener('click', () => {
+            const current = document.documentElement.getAttribute('data-theme');
+            document.documentElement.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+        });
+    </script>
+</body>
+</html>
